@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
@@ -99,6 +99,44 @@ async function saveGeneratedMedia(base64: string, mime: string, fallback: 'png' 
   await mkdir(outputDir, { recursive: true });
   await writeFile(resolve(outputDir, filename), Buffer.from(base64, 'base64'));
   return `/generated/${filename}`;
+}
+
+/** Local-only, redacted upstream failure record for diagnosing provider outages. */
+async function logProviderFailure(input: {
+  phase: 'video-start' | 'video-status';
+  model: string;
+  mode: string;
+  status: number;
+  message: string;
+}) {
+  try {
+    const logDir = resolve(process.cwd(), 'logs');
+    await mkdir(logDir, { recursive: true });
+    const message = input.message
+      .replace(/(?:Bearer\s+|sk-|gho_|github_pat_)[\w.-]+/gi, '[redacted]')
+      .replace(/data:[^\s]+/gi, '[data-url-redacted]')
+      .slice(0, 500);
+    await appendFile(
+      resolve(logDir, 'provider-gateway.log'),
+      `${JSON.stringify({ at: new Date().toISOString(), ...input, message })}\n`,
+      'utf8',
+    );
+  } catch {
+    // Diagnostics must never interrupt generation.
+  }
+}
+
+function upstreamErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback;
+  const error = (payload as { error?: unknown }).error;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string') {
+    return (error as { message: string }).message;
+  }
+  if (typeof (payload as { message?: unknown }).message === 'string') {
+    return (payload as { message: string }).message;
+  }
+  return fallback;
 }
 
 async function asGeminiInlineData(url: string) {
@@ -459,20 +497,50 @@ function imageGateway(): Plugin {
               body: JSON.stringify(videoBody),
             });
             const started = await upstream.json() as { request_id?: string; error?: { message?: string } };
-            if (!upstream.ok || !started.request_id) throw new Error(started.error?.message || `Video request failed (${upstream.status}).`);
+            if (!upstream.ok || !started.request_id) {
+              const message = upstreamErrorMessage(started, `Video request failed (${upstream.status}).`);
+              await logProviderFailure({
+                phase: 'video-start',
+                model: input.model,
+                mode,
+                status: upstream.status,
+                message,
+              });
+              throw new Error(`Video request failed (${upstream.status}): ${message}`);
+            }
             for (let attempt = 0; attempt < 120; attempt += 1) {
               await new Promise((resolve) => setTimeout(resolve, 2_000));
               const statusResponse = await fetch(`${baseUrl.href.replace(/\/$/, '')}/videos/${started.request_id}`, {
                 headers: { Authorization: `Bearer ${input.apiKey}` },
               });
               const status = await statusResponse.json() as { status?: string; video?: { url?: string }; error?: { message?: string } };
-              if (!statusResponse.ok) throw new Error(status.error?.message || `Video status failed (${statusResponse.status}).`);
+              if (!statusResponse.ok) {
+                const message = upstreamErrorMessage(status, `Video status failed (${statusResponse.status}).`);
+                await logProviderFailure({
+                  phase: 'video-status',
+                  model: input.model,
+                  mode,
+                  status: statusResponse.status,
+                  message,
+                });
+                throw new Error(`Video status failed (${statusResponse.status}): ${message}`);
+              }
               if (status.status === 'done' && status.video?.url) {
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ url: status.video.url }));
                 return;
               }
-              if (status.status === 'failed' || status.status === 'expired') throw new Error(`Video generation ${status.status}.`);
+              if (status.status === 'failed' || status.status === 'expired') {
+                const message = upstreamErrorMessage(status, `Video generation ${status.status}.`);
+                await logProviderFailure({
+                  phase: 'video-status',
+                  model: input.model,
+                  mode,
+                  status: 200,
+                  message,
+                });
+                throw new Error(message);
+              }
             }
             throw new Error('Video generation timed out after 4 minutes.');
           }
