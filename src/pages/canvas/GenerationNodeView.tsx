@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Loader2, Play, AlertTriangle } from 'lucide-react';
 import type { CanvasGenerationNodeData, CanvasAssetNodeData, ReferenceRole } from '../../state/canvasTypes';
 import {
+  aspectRatioOptions,
   outputSpecs,
   referenceCapabilities,
   referenceModeForInputs,
@@ -51,6 +52,7 @@ function GenerationNodeView({ id, data, selected }: NodeProps<GenerationFlowNode
   const model = models.find((m) => m.key === data.modelKey) ?? models[0];
   const modelId = model?.modelId;
   const specs = outputSpecs(modelId, data.type);
+  const ratioOptions = aspectRatioOptions(modelId, data.type);
   const durationOpts = videoDurationOptions(modelId);
 
   const refs = useMemo(
@@ -123,7 +125,16 @@ function GenerationNodeView({ id, data, selected }: NodeProps<GenerationFlowNode
           <span>{t('create.model')}</span>
           <select
             value={data.modelKey || model?.key || ''}
-            onChange={(e) => onChangeGen(id, { modelKey: e.target.value })}
+            onChange={(e) => {
+              const nextModel = models.find((candidate) => candidate.key === e.target.value);
+              const nextRatios = aspectRatioOptions(nextModel?.modelId, data.type);
+              onChangeGen(id, {
+                modelKey: e.target.value,
+                ratio: nextRatios.some((option) => option.value === data.ratio)
+                  ? data.ratio
+                  : nextRatios[0].value,
+              });
+            }}
             disabled={!models.length}
           >
             {models.length === 0 ? (
@@ -158,9 +169,9 @@ function GenerationNodeView({ id, data, selected }: NodeProps<GenerationFlowNode
               value={data.ratio}
               onChange={(e) => onChangeGen(id, { ratio: e.target.value })}
             >
-              <option value="1:1">1:1</option>
-              <option value="16:9">16:9</option>
-              <option value="9:16">9:16</option>
+              {ratioOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
           <label className="canvas-field">

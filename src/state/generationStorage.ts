@@ -57,8 +57,9 @@ function normalizeAsset(raw: unknown): LibraryAsset | null {
   if (!isRecord(raw) || typeof raw.id !== 'string') return null;
   const type = raw.type === 'video' ? 'video' : raw.type === 'image' ? 'image' : null;
   if (!type) return null;
-  const ratio =
-    raw.ratio === '1/1' || raw.ratio === '16/9' || raw.ratio === '9/16' ? raw.ratio : '1/1';
+  const ratio = typeof raw.ratio === 'string' && /^\d+(?:\.\d+)?\/\d+(?:\.\d+)?$/.test(raw.ratio)
+    ? raw.ratio
+    : '1/1';
   const base: LibraryAsset = {
     id: raw.id,
     jobId: typeof raw.jobId === 'string' ? raw.jobId : '',

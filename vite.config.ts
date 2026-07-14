@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { referenceCapabilities, seedSupported } from './src/lib/modelCapabilities.js';
+import {
+  genericImageSizeForRatio,
+  isGptImageModel,
+  isGrokImagineImageModel,
+  referenceCapabilities,
+  seedSupported,
+} from './src/lib/modelCapabilities.js';
 
 type GenerateRequest = {
   baseUrl?: string;
@@ -470,19 +476,21 @@ function imageGateway(): Plugin {
             }
             throw new Error('Video generation timed out after 4 minutes.');
           }
-          const size = input.ratio === '9:16' ? '1024x1536' : input.ratio === '1:1' ? '1024x1024' : '1536x1024';
+          const size = genericImageSizeForRatio(input.ratio);
+          const grokImage = isGrokImagineImageModel(input.model);
+          const gptImage = isGptImageModel(input.model);
           const imageReferences = references.filter((reference) => reference.kind === 'image');
           if (references.some((reference) => reference.kind === 'video')) {
             throw new Error('Image generation accepts image references only.');
           }
-          if (imageReferences.length && !input.model.startsWith('gpt-image') && !input.model.includes('grok-imagine-image')) {
+          if (imageReferences.length && !gptImage && !grokImage) {
             throw new Error('The selected image model does not support reference images.');
           }
-          if (input.model.includes('grok-imagine-image') && imageReferences.length > 3) {
+          if (grokImage && imageReferences.length > 3) {
             throw new Error('Grok image editing accepts up to three source images.');
           }
           let upstream: Response;
-          if (input.model.startsWith('gpt-image') && imageReferences.length) {
+          if (gptImage && imageReferences.length) {
             const form = new FormData();
             form.set('model', input.model);
             form.set('prompt', input.prompt);
@@ -499,10 +507,10 @@ function imageGateway(): Plugin {
             });
           } else {
           const body: Record<string, unknown> = { model: input.model, prompt: input.prompt, n: 1 };
-          if (input.model.startsWith('gpt-image')) {
+          if (gptImage) {
             body.size = size;
             body.quality = input.quality === 'high' ? 'high' : 'low';
-          } else if (input.model.includes('grok-imagine-image')) {
+          } else if (grokImage) {
             body.aspect_ratio = input.ratio ?? '16:9';
             body.resolution = input.quality === 'high' ? '2k' : '1k';
             if (imageReferences.length) {
@@ -513,7 +521,7 @@ function imageGateway(): Plugin {
             const seed = seedSupported(input.model, 'image') ? numericSeed(input.seed) : undefined;
             if (seed !== undefined) body.seed = seed;
           }
-          const imageEndpoint = input.model.includes('grok-imagine-image') && imageReferences.length
+          const imageEndpoint = grokImage && imageReferences.length
             ? '/images/edits'
             : '/images/generations';
           upstream = await fetch(`${baseUrl.href.replace(/\/$/, '')}${imageEndpoint}`, {

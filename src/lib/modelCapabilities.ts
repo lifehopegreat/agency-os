@@ -4,6 +4,30 @@ export type OutputSpec = {
   detail: string;
 };
 
+export type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '3:2' | '2:3' | '7:4' | '4:7';
+
+export type AspectRatioOption = { value: AspectRatio; label: string };
+
+const COMMON_IMAGE_RATIOS: AspectRatioOption[] = [
+  { value: '1:1', label: '1:1' },
+  { value: '16:9', label: '16:9' },
+  { value: '9:16', label: '9:16' },
+  { value: '4:3', label: '4:3' },
+  { value: '3:4', label: '3:4' },
+];
+
+const RATIO_VALUES: Record<AspectRatio, number> = {
+  '1:1': 1,
+  '16:9': 16 / 9,
+  '9:16': 9 / 16,
+  '4:3': 4 / 3,
+  '3:4': 3 / 4,
+  '3:2': 3 / 2,
+  '2:3': 2 / 3,
+  '7:4': 7 / 4,
+  '4:7': 4 / 7,
+};
+
 export type ReferenceMode = 'image-reference' | 'image-to-video' | 'video-edit';
 
 export type ReferenceLimitKind = 'hard' | 'recommended' | 'project' | 'unsupported';
@@ -26,6 +50,74 @@ export function isGeminiImageModel(modelId: string | undefined): boolean {
   return /gemini|nano\s*banana|imagen/i.test(modelId ?? '');
 }
 
+export function isGrokImagineImageModel(modelId: string | undefined): boolean {
+  const id = modelId?.toLowerCase() ?? '';
+  return id.includes('grok-imagine') && !id.includes('video');
+}
+
+export function isGptImageModel(modelId: string | undefined): boolean {
+  return (modelId?.toLowerCase() ?? '').startsWith('gpt-image');
+}
+
+export function isDallEImageModel(modelId: string | undefined): boolean {
+  return /(?:^|[-_/])dall-e(?:[-_/]|$)/i.test(modelId ?? '');
+}
+
+/** Model-aware ratios: never label a provider's nearest size as a different ratio. */
+export function aspectRatioOptions(
+  modelId: string | undefined,
+  type: 'image' | 'video',
+): AspectRatioOption[] {
+  if (type === 'image' && isGptImageModel(modelId)) {
+    return [
+      { value: '1:1', label: '1:1' },
+      { value: '3:2', label: '3:2' },
+      { value: '2:3', label: '2:3' },
+    ];
+  }
+  if (type === 'image' && isDallEImageModel(modelId)) {
+    return [
+      { value: '1:1', label: '1:1' },
+      { value: '7:4', label: '7:4' },
+      { value: '4:7', label: '4:7' },
+    ];
+  }
+  if (type === 'video' && (isGeminiVideoModel(modelId) || /grok-imagine-video/i.test(modelId ?? ''))) {
+    return [
+      { value: '16:9', label: '16:9' },
+      { value: '9:16', label: '9:16' },
+    ];
+  }
+  return COMMON_IMAGE_RATIOS;
+}
+
+export function isAspectRatio(value: string): value is AspectRatio {
+  return value in RATIO_VALUES;
+}
+
+export function aspectRatioFromDimensions(width: number, height: number): AspectRatio | string {
+  if (!width || !height) return `${width}:${height}`;
+  const measured = width / height;
+  const closest = (Object.keys(RATIO_VALUES) as AspectRatio[])
+    .map((value) => ({ value, distance: Math.abs(Math.log(measured / RATIO_VALUES[value])) }))
+    .sort((a, b) => a.distance - b.distance)[0];
+  return closest && closest.distance < 0.02 ? closest.value : `${width}:${height}`;
+}
+
+export function genericImageSizeForRatio(ratio: string | undefined): string {
+  switch (ratio) {
+    case '9:16': return '1024x1536';
+    case '4:3': return '1024x768';
+    case '3:4': return '768x1024';
+    case '3:2': return '1536x1024';
+    case '2:3': return '1024x1536';
+    case '7:4': return '1792x1024';
+    case '4:7': return '1024x1792';
+    case '1:1': return '1024x1024';
+    default: return '1536x1024';
+  }
+}
+
 export function isGeminiVideoModel(modelId: string | undefined): boolean {
   return /veo|gemini.*video|omni.*video/i.test(modelId ?? '');
 }
@@ -42,13 +134,13 @@ export function outputSpecs(modelId: string | undefined, type: 'image' | 'video'
       { value: 'high', label: '高清 · 720p', detail: '720p' },
     ];
   }
-  if (type === 'image' && id.includes('grok-imagine-image')) {
+  if (type === 'image' && isGrokImagineImageModel(modelId)) {
     return [
       { value: 'standard', label: '标准 · 1K', detail: '1K' },
       { value: 'high', label: '高清 · 2K', detail: '2K' },
     ];
   }
-  if (type === 'image' && id.startsWith('gpt-image')) {
+  if (type === 'image' && isGptImageModel(modelId)) {
     return [
       { value: 'standard', label: '标准 · Low', detail: 'low' },
       { value: 'high', label: '高清 · High', detail: 'high' },
@@ -102,12 +194,12 @@ export function referenceCapabilities(
   mode: ReferenceMode = 'image-reference',
 ): ReferenceCapability {
   const id = modelId?.toLowerCase() ?? '';
-  if (type === 'image' && id.startsWith('gpt-image')) {
+  if (type === 'image' && isGptImageModel(modelId)) {
     // The API documents multiple inputs but no hard maximum. Keep a deliberate
     // project guardrail rather than presenting four as an OpenAI model limit.
     return { imageLimit: 4, videoLimit: 0, imageLimitKind: 'project', videoLimitKind: 'unsupported' };
   }
-  if (type === 'image' && id.includes('grok-imagine-image')) {
+  if (type === 'image' && isGrokImagineImageModel(modelId)) {
     return { imageLimit: 3, videoLimit: 0, imageLimitKind: 'hard', videoLimitKind: 'unsupported' };
   }
   if (

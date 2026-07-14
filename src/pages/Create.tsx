@@ -24,6 +24,8 @@ import { useI18n } from '../i18n/useI18n';
 import PromptLibrary, { type ApplyPromptPayload } from '../components/PromptLibrary';
 import type { CreateLocationState } from '../lib/recipe';
 import {
+  aspectRatioOptions,
+  isAspectRatio,
   outputSpecs,
   referenceCapabilities,
   videoDurationOptions,
@@ -81,6 +83,7 @@ const CreatePage = () => {
   const selected =
     outputModels.find((m) => m.key === modelKey) ?? outputModels[0] ?? null;
   const specs = outputSpecs(selected?.modelId, type);
+  const ratioOptions = aspectRatioOptions(selected?.modelId, type);
   const referenceCapability = referenceCapabilities(selected?.modelId, type, referenceMode);
   const durationOptions = type === 'video' ? videoDurationOptions(selected?.modelId) : null;
   const allowsVideoMode = referenceCapability.videoModes?.includes(referenceMode);
@@ -121,6 +124,10 @@ const CreatePage = () => {
   }, [specs, quality]);
 
   useEffect(() => {
+    if (!ratioOptions.some((option) => option.value === ratio)) setRatio(ratioOptions[0].value);
+  }, [ratioOptions, ratio]);
+
+  useEffect(() => {
     if (durationOptions && !durationOptions.includes(duration)) setDuration(6);
   }, [durationOptions, duration]);
 
@@ -136,7 +143,7 @@ const CreatePage = () => {
       const matched = findSelectable(r.model);
       if (matched) setModelKey(matched.key);
       const ratioNorm = (r.ratio || '16:9').replace('/', ':');
-      if (ratioNorm === '1:1' || ratioNorm === '16:9' || ratioNorm === '9:16') {
+      if (isAspectRatio(ratioNorm)) {
         setRatio(ratioNorm);
       }
       if (r.quality === 'standard' || r.quality === 'high') {
@@ -627,9 +634,9 @@ const CreatePage = () => {
               <div className="form-group">
                 <label htmlFor="ratio">{t('create.aspect')}</label>
                 <select id="ratio" value={ratio} onChange={(e) => setRatio(e.target.value)}>
-                  <option value="1:1">1:1</option>
-                  <option value="16:9">16:9</option>
-                  <option value="9:16">9:16</option>
+                  {ratioOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="form-group">

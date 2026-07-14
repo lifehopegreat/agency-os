@@ -23,7 +23,7 @@ export type PromptTemplate = {
   title: LocalizedText;
   body: LocalizedText;
   tags: LocalizedText;
-  ratio?: '1:1' | '16:9' | '9:16';
+  ratio?: import('../lib/modelCapabilities').AspectRatio;
   builtIn: boolean;
 };
 
@@ -227,11 +227,13 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
 
 export function normalizeRatio(
   ratio?: string,
-): '1:1' | '16:9' | '9:16' | undefined {
+): import('../lib/modelCapabilities').AspectRatio | undefined {
   if (!ratio) return undefined;
-  if (ratio === '1:1' || ratio === '16:9' || ratio === '9:16') return ratio;
-  if (ratio === '3:4' || ratio === '4:5' || ratio === '2:3') return '9:16';
-  if (ratio === '21:9' || ratio === '3:2') return '16:9';
+  if (['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '7:4', '4:7'].includes(ratio)) {
+    return ratio as import('../lib/modelCapabilities').AspectRatio;
+  }
+  if (ratio === '4:5') return '3:4';
+  if (ratio === '21:9') return '16:9';
   return undefined;
 }
 

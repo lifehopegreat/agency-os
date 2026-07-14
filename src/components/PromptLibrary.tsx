@@ -20,10 +20,11 @@ import {
 import { usePromptLibrary } from '../state/PromptLibraryContext';
 import { useI18n } from '../i18n/useI18n';
 import type { Locale } from '../i18n/locales';
+import type { AspectRatio } from '../lib/modelCapabilities';
 
 export type ApplyPromptPayload = {
   body: string;
-  ratio?: '1:1' | '16:9' | '9:16';
+  ratio?: AspectRatio;
   mode: 'replace' | 'append';
 };
 

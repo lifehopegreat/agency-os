@@ -31,7 +31,7 @@ type ViewAsset = {
   model: string;
   time: string;
   dim: string;
-  ratio: '1/1' | '16/9' | '9/16';
+  ratio: string;
   prompt: string;
   hue: number;
   fresh: boolean;

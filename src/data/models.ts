@@ -22,17 +22,13 @@ export function matchModelValue(labelOrValue: string): ModelValue {
 }
 
 export function formRatioFromAsset(
-  ratio: '1/1' | '16/9' | '9/16' | string,
-): '1:1' | '16:9' | '9:16' {
-  if (ratio === '1/1' || ratio === '1:1') return '1:1';
-  if (ratio === '9/16' || ratio === '9:16') return '9:16';
-  return '16:9';
+  ratio: string,
+): string {
+  return ratio.replace('/', ':');
 }
 
 export function assetRatioFromForm(
   ratio: string,
-): '1/1' | '16/9' | '9/16' {
-  if (ratio === '1:1' || ratio === '1/1') return '1/1';
-  if (ratio === '9:16' || ratio === '9/16') return '9/16';
-  return '16/9';
+): string {
+  return ratio.replace(':', '/');
 }

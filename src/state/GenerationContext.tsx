@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { tt } from '../i18n/runtime';
+import { aspectRatioFromDimensions } from '../lib/modelCapabilities';
 import { loadGenerationState, saveGenerationState } from './generationStorage';
 
 export type GenStatus = 'idle' | 'queued' | 'running' | 'success' | 'failed';
@@ -43,7 +44,7 @@ export type LibraryAsset = {
   model: string;
   prompt: string;
   dim: string;
-  ratio: '1/1' | '16/9' | '9/16';
+  ratio: string;
   createdAt: number;
   hue: number;
   /** null / missing = uncategorized */
@@ -128,8 +129,14 @@ function makeId(prefix: string) {
 
 function ratioToDim(ratio: string, type: 'image' | 'video'): {
   dim: string;
-  ratioKey: '1/1' | '16/9' | '9/16';
+  ratioKey: string;
 } {
+  if (ratio === '3:4') return { dim: '768脳1024', ratioKey: '3/4' };
+  if (ratio === '4:3') return { dim: '1024脳768', ratioKey: '4/3' };
+  if (ratio === '2:3') return { dim: '1024脳1536', ratioKey: '2/3' };
+  if (ratio === '3:2') return { dim: '1536脳1024', ratioKey: '3/2' };
+  if (ratio === '4:7') return { dim: '1024脳1792', ratioKey: '4/7' };
+  if (ratio === '7:4') return { dim: '1792脳1024', ratioKey: '7/4' };
   if (ratio === '9:16') {
     return {
       dim: type === 'video' ? '1080×1920' : '832×1216',
@@ -247,8 +254,7 @@ export function GenerationProvider({
 
   const updateAssetDimensions = useCallback((id: string, width: number, height: number) => {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return;
-    const ratio = width / height;
-    const ratioKey: LibraryAsset['ratio'] = ratio > 1.2 ? '16/9' : ratio < 0.83 ? '9/16' : '1/1';
+    const ratioKey = aspectRatioFromDimensions(width, height).replace(':', '/');
     const dim = `${width}×${height}`;
     setLibrary((lib) => lib.map((asset) =>
       asset.id === id && (asset.dim !== dim || asset.ratio !== ratioKey)
